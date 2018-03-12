@@ -1,6 +1,8 @@
 var mongoose=require('mongoose');
 var validator=require('validator');
 var a=require('lodash');
+var bcrypt=require('bcryptjs');
+
 const jwt=require('jsonwebtoken');
 const express=require('express');
 var app=express();
@@ -67,6 +69,42 @@ UserSchema.statics.findByToken = function (token) {
     'tokens.access': 'auth'
   });
 };
+UserSchema.statics.findByCredentials= function(email,password){
+  var User=this;
+
+  return User.findOne({email}).then((user)=>{
+    if(!user){
+    return  Promise.reject();
+    }
+    return new Promise((resolve,reject)=>{
+
+bcrypt.compare(password,user.password,(err,res)=>{
+  if(res){
+    resolve(user);
+  }
+  else{
+    reject();
+  }
+});
+    });
+
+  });
+
+};
+UserSchema.pre('save',function(next){
+  var user=this;
+  if(user.isModified('password')){
+bcrypt.genSalt(10,(err,salt)=>{
+  bcrypt.hash(user.password,salt,(err,hash)=>{
+    user.password=hash;
+    next();
+  });
+});
+
+  }else {
+    next();
+  }
+});
 var User = mongoose.model('User', UserSchema);
 
 app.post('/users', (req, res) => {
@@ -83,6 +121,22 @@ app.post('/users', (req, res) => {
     res.status(400).send(e);
   })
 });
+app.post('/users/login',(req,res)=>{
+  var body = a.pick(req.body, ['email', 'password']);
+  // res.send(body);
+  User.findByCredentials(body.email,body.password).then((user)=>{
+    // res.send(user);
+
+user.generateAuthToken().then((token)=>{
+res.header('x-auth', token).send(user);
+
+});
+
+  }).catch((e)=>{
+    res.status(400).send();
+
+  });
+});
 
 app.get('/users/me',(req,res)=>{
   var token=req.header('x-auth');
@@ -93,7 +147,7 @@ app.get('/users/me',(req,res)=>{
     res.send(user);
 
   }).catch((e)=>{
-    res.stus(401).send();
+    res.status(401).send();
   });
 
 });
